@@ -3,6 +3,7 @@ from label_studio_ml.model import LabelStudioMLBase
 
 from pytracking.pytracking.evaluation import Tracker
 
+
 class RTSTracker(LabelStudioMLBase):
 
     def predict(self, tasks: List[Dict], context: Optional[Dict] = None, **kwargs) -> List[Dict]:
@@ -24,11 +25,12 @@ class RTSTracker(LabelStudioMLBase):
             rel_bbox = [result['x'], result['y'], result['width'], result['height']]
             label_id = first_annotation['result'][0]['id']
             # tracker.run_video_noninteractive(videofilepath=video_path, optional_box=rel_bbox)
-
+        
+        # TODO: maybe I need the exact same order of keys like tasks['annotations'] in order for 
+        # it to work
         results = []
         sequence = []
         for i in range(50):
-            # creates a random ID for your label everytime so no chance for errors
             sequence.append({
                     'frame': i + 2,
                     'enabled': 'true',
