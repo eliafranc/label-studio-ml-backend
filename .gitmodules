@@ -1,0 +1,3 @@
+[submodule "rts-tracker/pytracking"]
+	path = rts-tracker/pytracking
+	url = git@github.com:eliafranc/pytracking.git
