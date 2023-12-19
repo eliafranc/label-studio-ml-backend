@@ -56,10 +56,4 @@ RUN python3 -m pip install --upgrade pip && python3 -m pip install --no-cache-di
 
 COPY . ./
 
-RUN git clone --recurse-submodules https://github.com/eliafranc/pytracking.git && \
-    cd pytracking && \
-    git submodule update --init --recursive && \
-    chmod +x install.sh && \
-    ./install.sh
-
 CMD exec gunicorn --preload --bind :$PORT --workers $WORKERS --threads $THREADS --timeout 0 _wsgi:app
