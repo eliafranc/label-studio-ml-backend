@@ -4,6 +4,12 @@ services:
   ml-backend:
     container_name: ml-backend
     image: humansignal/ml-backend:v0
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: [gpu]
     build: .
     environment:
       - MODEL_DIR=/data/models
@@ -11,5 +17,7 @@ services:
       - THREADS=4
       - LOG_LEVEL=DEBUG
       - ANY=PARAMETER
+      - LABEL_STUDIO_HOST=http://localhost:8080
+      - LABEL_STUDIO_ACCESS_TOKEN=21c1033225762f33da90821ab7b8650bab85632c
     ports:
       - "9090:9090"
