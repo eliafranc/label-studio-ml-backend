@@ -1,10 +1,21 @@
+import logging
+import os
+import cv2 as cv
+
 from typing import List, Dict, Optional
 from label_studio_ml.model import LabelStudioMLBase
 
 from pytracking.pytracking.evaluation import Tracker
 
+logger = logging.getLogger(__name__)
+
 
 class RTSTracker(LabelStudioMLBase):
+
+    def __init__(self, tracker: str = 'rts', tracker_params: str = 'rts50', **kwargs):
+        super(RTSTracker, self).__init__(**kwargs)
+        self.tracker = Tracker(tracker, tracker_params)
+        # TODO: make sure to run some video such that the prroi can build upon init
 
     def predict(self, tasks: List[Dict], context: Optional[Dict] = None, **kwargs) -> List[Dict]:
         """ Write your inference logic here
@@ -14,31 +25,52 @@ class RTSTracker(LabelStudioMLBase):
         """
 
         tracker = Tracker('rts', 'rts50')
+
         predictions = []
         print(tasks)
         # TODO: For now lets assume one annotation / one object
         first_annotations = tasks[0]['annotations']
-        video_path = tasks[0]['data']['video']
+        video_path = tasks[0]['data']['video_url']
+        print('--------------------')
+        print(video_path)
+        print('--------------------')
+
+        vc = cv.VideoCapture(video_path)
+        image_width = vc.get(cv.CAP_PROP_FRAME_WIDTH)
+        image_height = vc.get(cv.CAP_PROP_FRAME_HEIGHT)
 
         for first_annotation in first_annotations:
             result = first_annotation['result'][0]['value']['sequence'][0]
             rel_bbox = [result['x'], result['y'], result['width'], result['height']]
+            abs_bbox = self.relative_to_absolute_bb(result, image_height, image_width)
             label_id = first_annotation['result'][0]['id']
-            # tracker.run_video_noninteractive(videofilepath=video_path, optional_box=rel_bbox)
+            pred = tracker.run_video_noninteractive(videofilepath=video_path, optional_box=abs_bbox)
+            print('--------------------')
+            print(pred)
+            print('--------------------')
+            predictions.append(pred)
+        
+        print('--------------------')
+        print(len(predictions))
+        print('--------------------')
+
         
         # TODO: maybe I need the exact same order of keys like tasks['annotations'] in order for 
         # it to work
         results = []
         sequence = []
-        for i in range(50):
+        i = 1
+        # TODO: predicitons is a list of dictionaries, addapt code
+        for key, value in predictions.items():
+            i += 1
             sequence.append({
-                    'frame': i + 2,
+                    'frame': i,
                     'enabled': 'true',
                     'rotation': 0,
-                    'x': rel_bbox[0],
-                    'y': rel_bbox[1],
-                    'width': rel_bbox[2],
-                    'height': rel_bbox[3],
+                    'x': predictions[key][0],
+                    'y': predictions[key][1],
+                    'width': predictions[key][2],
+                    'height': predictions[key][3],
                     'time': 0.04,
                     })
 
@@ -59,7 +91,7 @@ class RTSTracker(LabelStudioMLBase):
 
         return [{
             'result': results,
-            'model_version': 0
+            'model_version': 1.0
         }]
 
 
@@ -87,10 +119,10 @@ class RTSTracker(LabelStudioMLBase):
 
         print('fit() completed successfully.')
 
-    def relative_to_absolute_bb(value, total_height, total_width):
-        tl_x = total_width * (value['x'] / 100)
-        tl_y = total_height * (value['y'] / 100)
-        bb_width = total_width / value['width']
-        bb_height = total_height / value['height']
+    def relative_to_absolute_bb(self, value: dict, total_height: float, total_width: float):
+        tl_x = round(total_width * (value['x'] / 100))
+        tl_y = round(total_height * (value['y'] / 100))
+        bb_width = round(total_width / value['width'])
+        bb_height = round(total_height / value['height'])
 
         return [tl_x, tl_y, bb_width, bb_height]
