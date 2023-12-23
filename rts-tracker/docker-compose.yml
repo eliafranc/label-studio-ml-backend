@@ -19,5 +19,4 @@ services:
       - ANY=PARAMETER
       - LABEL_STUDIO_HOST=http://localhost:8080
       - LABEL_STUDIO_ACCESS_TOKEN=21c1033225762f33da90821ab7b8650bab85632c
-    ports:
-      - "9090:9090"
+    network_mode: host
