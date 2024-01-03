@@ -25,6 +25,7 @@ class RTSTracker(LabelStudioMLBase):
         """
         predictions = []
         results = []
+        logger.info("========================================")
         logger.info(f"Number of samples to run bounding box prediction on: {len(tasks)}.")
 
         for task in tasks:
@@ -47,18 +48,19 @@ class RTSTracker(LabelStudioMLBase):
             if not annotation:
                 # If there is no annotation, log a warning and continue with the next sample
                 logger.warning(f"No initial bounding box annotation for sample: {video_path}")
+                logger.warning(f"Skipping sample: {sample_id}")
+                logger.info("========================================")
                 predictions.append({})
                 continue
 
             sequence = annotation[0]['result'][0]['value']['sequence'][0]
             abs_bbox = self.relative_to_absolute_bb(sequence, image_height, image_width)
             init_frame = sequence['frame']
-            vc.set(cv.CAP_PROP_POS_FRAMES, init_frame - 1)
 
             logger.info(f"Initial bounding box annotation found in frame number: {init_frame}")
             logger.info("Running RTS tracker on sample...")
 
-            pred = self.tracker.run_video_noninteractive(videocapture=vc, init_frame=init_frame, optional_box=abs_bbox)
+            pred = self.tracker.run_video_noninteractive(videofilepath=video_path, init_frame=init_frame, optional_box=abs_bbox)
 
             # TODO: For now we assume that only one object is being tracked,
             # in the future we should be able to track multiple objects which
@@ -66,9 +68,8 @@ class RTSTracker(LabelStudioMLBase):
             i = init_frame
             sequence = []
             for obj_id, bboxes in pred.items():
-                for bbox in bboxes[1:]:
+                for bbox in bboxes:
                     bbox_abs = self.absolute_to_relative_bb(bbox, image_height, image_width)
-                    i += 1
                     sequence.append({
                             'frame': i,
                             'enabled': 'true',
@@ -79,12 +80,13 @@ class RTSTracker(LabelStudioMLBase):
                             'height': bbox_abs[3],
                             'time': delta_t_per_frame,
                             })
+                    i += 1
 
                 results.append({
                     'from_name': "box",
                     'to_name': "video",
                     'type': "videorectangle",
-                    'origin': "ml-backend",
+                    'origin': "prediction",
                     'image_rotation': 0,
                     'value': {
                         'sequence': sequence,
@@ -93,10 +95,10 @@ class RTSTracker(LabelStudioMLBase):
                     'readonly': False
                 })
 
-                predictions.append({'result': results, 'model_version': 1.0})
+                predictions.append({'result': results, 'model_version': 'RTS Tracker v0.1'})
 
                 logger.info("RTS tracker finished running.")
-                logger.info("----------------------------------------")
+                logger.info("========================================")
 
         return predictions
 
@@ -128,15 +130,15 @@ class RTSTracker(LabelStudioMLBase):
     def relative_to_absolute_bb(self, value: dict, total_height: float, total_width: float):
         tl_x = round(total_width * (value['x'] / 100))
         tl_y = round(total_height * (value['y'] / 100))
-        bb_width = round(total_width / value['width'])
-        bb_height = round(total_height / value['height'])
+        bb_width = round(total_width * (value['width'] / 100))
+        bb_height = round(total_height * (value['height'] / 100))
 
         return [tl_x, tl_y, bb_width, bb_height]
 
     def absolute_to_relative_bb(self, value: dict, total_height: float, total_width: float):
-        tl_x = round(100 * (value[0] / total_width))
-        tl_y = round(100 * (value[1] / total_height))
-        bb_width = round(total_width / value[2])
-        bb_height = round(total_height / value[3])
+        tl_x = 100 * (value[0] / total_width)
+        tl_y = 100 * (value[1] / total_height)
+        bb_width = 100 * (value[2] / total_width)
+        bb_height = 100 * (value[3] / total_height)
 
         return [tl_x, tl_y, bb_width, bb_height]
