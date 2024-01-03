@@ -14,7 +14,7 @@ class RTSTracker(LabelStudioMLBase):
 
     def __init__(self, tracker: str = 'rts', tracker_params: str = 'rts50', **kwargs):
         super(RTSTracker, self).__init__(**kwargs)
-        self.tracker = Tracker(tracker, tracker_params)
+        self.tracker = Tracker('rts', 'rts50')
         # TODO: make sure to run some video such that the prroi can build upon init
 
     def predict(self, tasks: List[Dict], context: Optional[Dict] = None, **kwargs) -> List[Dict]:
@@ -23,76 +23,82 @@ class RTSTracker(LabelStudioMLBase):
             :param context: [Label Studio context in JSON format](https://labelstud.io/guide/ml.html#Passing-data-to-ML-backend)
             :return predictions: [Predictions array in JSON format](https://labelstud.io/guide/export.html#Raw-JSON-format-of-completed-tasks)
         """
-
-        tracker = Tracker('rts', 'rts50')
-
         predictions = []
-        print(tasks)
-        # TODO: For now lets assume one annotation / one object
-        first_annotations = tasks[0]['annotations']
-        video_path = tasks[0]['data']['video_url']
-        print('--------------------')
-        print(video_path)
-        print('--------------------')
-
-        vc = cv.VideoCapture(video_path)
-        image_width = vc.get(cv.CAP_PROP_FRAME_WIDTH)
-        image_height = vc.get(cv.CAP_PROP_FRAME_HEIGHT)
-
-        for first_annotation in first_annotations:
-            result = first_annotation['result'][0]['value']['sequence'][0]
-            rel_bbox = [result['x'], result['y'], result['width'], result['height']]
-            abs_bbox = self.relative_to_absolute_bb(result, image_height, image_width)
-            label_id = first_annotation['result'][0]['id']
-            pred = tracker.run_video_noninteractive(videofilepath=video_path, optional_box=abs_bbox)
-            print('--------------------')
-            print(pred)
-            print('--------------------')
-            predictions.append(pred)
-        
-        print('--------------------')
-        print(len(predictions))
-        print('--------------------')
-
-        
-        # TODO: maybe I need the exact same order of keys like tasks['annotations'] in order for 
-        # it to work
         results = []
-        sequence = []
-        i = 1
-        # TODO: predicitons is a list of dictionaries, addapt code
-        for key, value in predictions.items():
-            i += 1
-            sequence.append({
-                    'frame': i,
-                    'enabled': 'true',
-                    'rotation': 0,
-                    'x': predictions[key][0],
-                    'y': predictions[key][1],
-                    'width': predictions[key][2],
-                    'height': predictions[key][3],
-                    'time': 0.04,
-                    })
+        logger.info(f"Number of samples to run bounding box prediction on: {len(tasks)}.")
 
-        results.append({
-            'id': label_id,
-            'from_name': "box",
-            'to_name': "video",
-            'type': "videorectangle",
-            'origin': "ml-backend",
-            'image_rotation': 0,
-            'value': {
-                'sequence': sequence,
-                'labels': ["drone"],
-            },
-            'score': 0.5,
-            'readonly': False
-        })
+        for task in tasks:
+            # Get the path to the video sample and the sample ID
+            video_path = task['data']['video_url']
+            sample_id = task['id']
 
-        return [{
-            'result': results,
-            'model_version': 1.0
-        }]
+            vc = cv.VideoCapture(video_path)
+            image_width = vc.get(cv.CAP_PROP_FRAME_WIDTH)
+            image_height = vc.get(cv.CAP_PROP_FRAME_HEIGHT)
+            fps = vc.get(cv.CAP_PROP_FPS)
+            delta_t_per_frame = 1 / fps
+
+            logger.info("========================================")
+            logger.info(f"Running task for sample: {video_path}")
+            logger.info(f"Detected FPS: {fps}")
+            logger.info(f"Sample ID: {sample_id}")
+
+            annotation = task.get('annotations')
+            if not annotation:
+                # If there is no annotation, log a warning and continue with the next sample
+                logger.warning(f"No initial bounding box annotation for sample: {video_path}")
+                predictions.append({})
+                continue
+
+            sequence = annotation[0]['result'][0]['value']['sequence'][0]
+            abs_bbox = self.relative_to_absolute_bb(sequence, image_height, image_width)
+            init_frame = sequence['frame']
+            vc.set(cv.CAP_PROP_POS_FRAMES, init_frame - 1)
+
+            logger.info(f"Initial bounding box annotation found in frame number: {init_frame}")
+            logger.info("Running RTS tracker on sample...")
+
+            pred = self.tracker.run_video_noninteractive(videocapture=vc, init_frame=init_frame, optional_box=abs_bbox)
+
+            # TODO: For now we assume that only one object is being tracked,
+            # in the future we should be able to track multiple objects which
+            # requires to propagate the label for each initial bounding box
+            i = init_frame
+            sequence = []
+            for obj_id, bboxes in pred.items():
+                for bbox in bboxes[1:]:
+                    bbox_abs = self.absolute_to_relative_bb(bbox, image_height, image_width)
+                    i += 1
+                    sequence.append({
+                            'frame': i,
+                            'enabled': 'true',
+                            'rotation': 0,
+                            'x': bbox_abs[0],
+                            'y': bbox_abs[1],
+                            'width': bbox_abs[2],
+                            'height': bbox_abs[3],
+                            'time': delta_t_per_frame,
+                            })
+
+                results.append({
+                    'from_name': "box",
+                    'to_name': "video",
+                    'type': "videorectangle",
+                    'origin': "ml-backend",
+                    'image_rotation': 0,
+                    'value': {
+                        'sequence': sequence,
+                        'labels': ["drone"],
+                    },
+                    'readonly': False
+                })
+
+                predictions.append({'result': results, 'model_version': 1.0})
+
+                logger.info("RTS tracker finished running.")
+                logger.info("----------------------------------------")
+
+        return predictions
 
 
     def fit(self, event, data, **kwargs):
@@ -124,5 +130,13 @@ class RTSTracker(LabelStudioMLBase):
         tl_y = round(total_height * (value['y'] / 100))
         bb_width = round(total_width / value['width'])
         bb_height = round(total_height / value['height'])
+
+        return [tl_x, tl_y, bb_width, bb_height]
+
+    def absolute_to_relative_bb(self, value: dict, total_height: float, total_width: float):
+        tl_x = round(100 * (value[0] / total_width))
+        tl_y = round(100 * (value[1] / total_height))
+        bb_width = round(total_width / value[2])
+        bb_height = round(total_height / value[3])
 
         return [tl_x, tl_y, bb_width, bb_height]
