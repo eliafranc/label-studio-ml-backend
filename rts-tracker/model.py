@@ -53,21 +53,26 @@ class RTSTracker(LabelStudioMLBase):
                 predictions.append({})
                 continue
 
-            sequence = annotation[0]['result'][0]['value']['sequence'][0]
-            abs_bbox = self.relative_to_absolute_bb(sequence, image_height, image_width)
-            init_frame = sequence['frame']
+            sequences = dict()
+            object_id = 1
+            for individual_obj in annotation[0]['result']:
+                sequence = individual_obj.get('value').get('sequence')[0]
+                abs_bbox = self.relative_to_absolute_bb(sequence, image_height, image_width)
+                sequences[object_id] = {"init_frame": sequence['frame'],
+                                        "bbox": abs_bbox,
+                                        "label": individual_obj.get('value').get('labels')[0]}
+                logger.info(f"Initial bounding box for object {object_id} found in frame: {sequence['frame']}")
+                object_id += 1
 
-            logger.info(f"Initial bounding box annotation found in frame number: {init_frame}")
             logger.info("Running RTS tracker on sample...")
-
-            pred = self.tracker.run_video_noninteractive(videofilepath=video_path, init_frame=init_frame, optional_box=abs_bbox)
+            pred = self.tracker.run_video_noninteractive(videofilepath=video_path, sequences=sequences)
 
             # TODO: For now we assume that only one object is being tracked,
             # in the future we should be able to track multiple objects which
             # requires to propagate the label for each initial bounding box
-            i = init_frame
-            sequence = []
             for obj_id, bboxes in pred.items():
+                sequence = []
+                i = sequences[obj_id]['init_frame']
                 for bbox in bboxes:
                     bbox_abs = self.absolute_to_relative_bb(bbox, image_height, image_width)
                     sequence.append({
@@ -90,7 +95,7 @@ class RTSTracker(LabelStudioMLBase):
                     'image_rotation': 0,
                     'value': {
                         'sequence': sequence,
-                        'labels': ["drone"],
+                        'labels': [sequences[obj_id]['label']],
                     },
                     'readonly': False
                 })
