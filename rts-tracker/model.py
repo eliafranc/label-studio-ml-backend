@@ -53,9 +53,20 @@ class RTSTracker(LabelStudioMLBase):
                 predictions.append({})
                 continue
 
+            if len(annotation) > 1:
+                # If there is more than one annotation, log a warning and continue with the next sample
+                logger.warning(f"More than one initial bounding box annotation for sample: {video_path}")
+                logger.warning(f"Skipping sample: {sample_id}")
+                logger.info("========================================")
+                predictions.append({})
+                continue
+
             sequences = dict()
             object_id = 1
             for individual_obj in annotation[0]['result']:
+                if len(individual_obj.get('value').get('sequence')) > 1:
+                    logger.warning(f"More than one bounding box annotation for object in sample: {sample_id}")
+                    continue
                 sequence = individual_obj.get('value').get('sequence')[0]
                 abs_bbox = self.relative_to_absolute_bb(sequence, image_height, image_width)
                 sequences[object_id] = {"init_frame": sequence['frame'],
@@ -64,42 +75,27 @@ class RTSTracker(LabelStudioMLBase):
                 logger.info(f"Initial bounding box for object {object_id} found in frame: {sequence['frame']}")
                 object_id += 1
 
+            # If there is no initial bounding box annotation, log a warning and continue with the next sample
+            if object_id == 1:
+                logger.warning(f"Skipping sample: {sample_id}")
+                logger.info("========================================")
+                break
+            
+            # Run tracker on the sample
             logger.info("Running RTS tracker on sample...")
             pred = self.tracker.run_video_noninteractive(videofilepath=video_path, sequences=sequences)
 
-            # TODO: For now we assume that only one object is being tracked,
-            # in the future we should be able to track multiple objects which
-            # requires to propagate the label for each initial bounding box
+            # Generate dictionaries for the predictions
             for obj_id, bboxes in pred.items():
                 sequence = []
                 i = sequences[obj_id]['init_frame']
                 for bbox in bboxes:
                     bbox_abs = self.absolute_to_relative_bb(bbox, image_height, image_width)
-                    sequence.append({
-                            'frame': i,
-                            'enabled': 'true',
-                            'rotation': 0,
-                            'x': bbox_abs[0],
-                            'y': bbox_abs[1],
-                            'width': bbox_abs[2],
-                            'height': bbox_abs[3],
-                            'time': delta_t_per_frame,
-                            })
+                    sequence.append(self.get_sequence_dict(i, bbox_abs, delta_t_per_frame))
                     i += 1
 
-                results.append({
-                    'from_name': "box",
-                    'to_name': "video",
-                    'type': "videorectangle",
-                    'origin': "prediction",
-                    'image_rotation': 0,
-                    'value': {
-                        'sequence': sequence,
-                        'labels': [sequences[obj_id]['label']],
-                    },
-                    'readonly': False
-                })
-
+                sequence = self.toggle_interpolation_last_frame(sequence)
+                results.append(self.get_results_dict(sequence, sequences[obj_id]['label']))
                 predictions.append({'result': results, 'model_version': 'RTS Tracker v0.1'})
 
                 logger.info("RTS tracker finished running.")
@@ -147,3 +143,33 @@ class RTSTracker(LabelStudioMLBase):
         bb_height = 100 * (value[3] / total_height)
 
         return [tl_x, tl_y, bb_width, bb_height]
+
+    def get_sequence_dict(self, frame_number: int, bbox: List[int], delta_t: float):
+        return {
+            'frame': frame_number,
+            'enabled': 'true',
+            'rotation': 0,
+            'x': bbox[0],
+            'y': bbox[1],
+            'width': bbox[2],
+            'height': bbox[3],
+            'time': delta_t,
+        }
+
+    def get_results_dict(self, sequence: List[dict], label: str):
+        return {
+            'from_name': "box",
+            'to_name': "video",
+            'type': "videorectangle",
+            'origin': "prediction",
+            'image_rotation': 0,
+            'value': {
+                'sequence': sequence,
+                'labels': [label],
+            },
+            'readonly': False
+        }
+
+    def toggle_interpolation_last_frame(self, sequence: List[dict]):
+        sequence[-1]['enabled'] = 'false'
+        return sequence
