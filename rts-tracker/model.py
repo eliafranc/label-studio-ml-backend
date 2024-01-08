@@ -33,11 +33,18 @@ class RTSTracker(LabelStudioMLBase):
             video_path = task['data']['video_url']
             sample_id = task['id']
 
-            vc = cv.VideoCapture(video_path)
-            image_width = vc.get(cv.CAP_PROP_FRAME_WIDTH)
-            image_height = vc.get(cv.CAP_PROP_FRAME_HEIGHT)
-            fps = vc.get(cv.CAP_PROP_FPS)
-            delta_t_per_frame = 1 / fps
+            # Try getting the fps, image_width and image_height from the task
+            # data, if not available, get it from the video
+            if task['data'].get('fps') and task['data'].get('image_width') and task['data'].get('image_height'):
+                fps = int(task['data']['fps'])
+                image_width = int(task['data']['image_width'])
+                image_height = int(task['data']['image_height'])
+            else:
+                vc = cv.VideoCapture(video_path)
+                image_width = vc.get(cv.CAP_PROP_FRAME_WIDTH)
+                image_height = vc.get(cv.CAP_PROP_FRAME_HEIGHT)
+                fps = vc.get(cv.CAP_PROP_FPS)
+                vc.release()
 
             logger.info("========================================")
             logger.info(f"Running task for sample: {video_path}")
@@ -91,7 +98,7 @@ class RTSTracker(LabelStudioMLBase):
                 i = sequences[obj_id]['init_frame']
                 for bbox in bboxes:
                     bbox_abs = self.absolute_to_relative_bb(bbox, image_height, image_width)
-                    sequence.append(self.get_sequence_dict(i, bbox_abs, delta_t_per_frame))
+                    sequence.append(self.get_sequence_dict(i, bbox_abs, 1/fps))
                     i += 1
 
                 sequence = self.toggle_interpolation_last_frame(sequence)
