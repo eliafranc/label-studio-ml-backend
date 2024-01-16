@@ -24,11 +24,13 @@ class RTSTracker(LabelStudioMLBase):
             :return predictions: [Predictions array in JSON format](https://labelstud.io/guide/export.html#Raw-JSON-format-of-completed-tasks)
         """
         predictions = []
-        results = []
         logger.info("========================================")
         logger.info(f"Number of samples to run bounding box prediction on: {len(tasks)}.")
 
         for task in tasks:
+            # Reset results to empty list
+            results = []
+
             # Get the path to the video sample and the sample ID
             video_path = task['data']['video_url']
             sample_id = task['id']
@@ -87,7 +89,7 @@ class RTSTracker(LabelStudioMLBase):
                 logger.warning(f"Skipping sample: {sample_id}")
                 logger.info("========================================")
                 break
-            
+
             # Run tracker on the sample
             logger.info("Running RTS tracker on sample...")
             pred = self.tracker.run_video_noninteractive(videofilepath=video_path, sequences=sequences)
@@ -103,10 +105,10 @@ class RTSTracker(LabelStudioMLBase):
 
                 sequence = self.toggle_interpolation_last_frame(sequence)
                 results.append(self.get_results_dict(sequence, sequences[obj_id]['label']))
-                predictions.append({'result': results, 'model_version': 'RTS Tracker v0.1'})
 
-                logger.info("RTS tracker finished running.")
-                logger.info("========================================")
+            predictions.append({'result': results.copy(), 'model_version': 'RTS Tracker v0.1'})
+            logger.info("RTS tracker finished running.")
+            logger.info("========================================")
 
         return predictions
 
