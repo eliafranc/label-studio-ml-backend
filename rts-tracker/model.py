@@ -1,11 +1,11 @@
 import logging
 import os
+from typing import Dict, List, Optional
+
 import cv2 as cv
-
-from typing import List, Dict, Optional
-from label_studio_ml.model import LabelStudioMLBase
-
 from pytracking.pytracking.evaluation import Tracker
+
+from label_studio_ml.model import LabelStudioMLBase
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +32,8 @@ class RTSTracker(LabelStudioMLBase):
             results = []
 
             # Get the path to the video sample and the sample ID
-            video_path = task['data']['video_url']
+            video_location = task['data']['video_url']
+            video_path = 'http://localhost:8080' + video_location
             sample_id = task['id']
 
             # Try getting the fps, image_width and image_height from the task
