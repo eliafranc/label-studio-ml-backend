@@ -3,7 +3,7 @@
 1. Build and start Machine Learning backend on `http://localhost:9090`
 
 ```bash
-docker-compose up
+docker compose up
 ```
 
 2. Validate that backend is running
